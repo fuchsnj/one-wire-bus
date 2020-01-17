@@ -33,7 +33,8 @@ fn find_devices<P, E>(
 {
     let mut one_wire_bus = OneWire::new(one_wire_pin).unwrap();
     for device_address in one_wire_bus.devices(false, delay) {
-        // The search could fail at any time, so check each result. The iterator automatically ends after an error.
+        // The search could fail at any time, so check each result. The iterator automatically
+        // ends after an error.
         let device_address = device_address.unwrap();
 
         // The family code can be used to identify the type of device
