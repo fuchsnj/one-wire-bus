@@ -2,9 +2,15 @@
 name = "one-wire-bus"
 version = "0.1.0"
 authors = ["Nathan Fox <fuchsnj@gmail.com>"]
+license = "MIT/Apache-2.0"
+repository = "https://github.com/fuchsnj/one-wire-bus"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+keywords = ["embedded", "onewire", "embedded-hal-driver", "1wire"]
+readme = "README.md"
+categories = ["embedded", "hardware-support", "no-std"]
+description = """
+A Rust implementation of the 1-Wire protocol for embedded-hal
+"""
 
 [dependencies]
 embedded-hal = {version="0.2.3", features=["unproven"]}
