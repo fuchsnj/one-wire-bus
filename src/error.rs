@@ -17,3 +17,13 @@ pub enum OneWireError<E> {
     CrcMismatch,
     Timeout,
 }
+
+#[cfg(feature = "std")]
+impl<E: Debug> std::error::Error for OneWireError<E> {}
+
+#[cfg(feature = "std")]
+impl<E: Debug> core::fmt::Display for OneWireError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
