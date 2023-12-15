@@ -60,17 +60,17 @@ where
             .map_err(|err| OneWireError::PinError(err))
     }
 
-    pub fn is_bus_high(&self) -> OneWireResult<bool, E> {
+    pub fn is_bus_high(&mut self) -> OneWireResult<bool, E> {
         self.pin
             .is_high()
             .map_err(|err| OneWireError::PinError(err))
     }
 
-    pub fn is_bus_low(&self) -> OneWireResult<bool, E> {
+    pub fn is_bus_low(&mut self) -> OneWireResult<bool, E> {
         self.pin.is_low().map_err(|err| OneWireError::PinError(err))
     }
 
-    fn wait_for_high(&self, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
+    fn wait_for_high(&mut self, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         // wait up to 250 µs for the bus to become high (from the pull-up resistor)
         for _ in 0..125 {
             if self.is_bus_high()? {
