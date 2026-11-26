@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Rust stable
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Test
+        run: cargo +stable test --all-features
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
+        with:
+          tool: cargo-hack@0.6.46
+          fallback: none
+      - name: Check each feature independently
+        run: cargo +stable hack check --each-feature --no-dev-deps
+      - name: Check formatting, lints, and bare-metal build
+        run: |
+          rustup component add --toolchain stable rustfmt clippy
+          rustup target add --toolchain stable thumbv6m-none-eabi
+          cargo +stable fmt --all -- --check
+          cargo +stable clippy --all-targets --all-features -- -D warnings
+          cargo +stable check --no-default-features --target thumbv6m-none-eabi

@@ -1,54 +1,52 @@
 # One-Wire Bus
-[![Build Status](https://travis-ci.org/fuchsnj/one-wire-bus.svg?branch=master)](https://travis-ci.org/fuchsnj/one-wire-bus)
+
+[![CI](https://github.com/fuchsnj/one-wire-bus/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/fuchsnj/one-wire-bus/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/one-wire-bus.svg)](https://crates.io/crates/one-wire-bus)
 [![API](https://docs.rs/one-wire-bus/badge.svg)](https://docs.rs/one-wire-bus)
 
-A Rust implementation of the [1-Wire](https://en.wikipedia.org/wiki/1-Wire) protocol for [embedded-hal](https://github.com/rust-embedded/embedded-hal)
+A blocking, `no_std` implementation of the 1-Wire protocol for
+[embedded-hal 1.0](https://github.com/rust-embedded/embedded-hal).
 
+## Quick start
 
-## Quick Start
-These examples omit error handling to keep them short. You should check all
-results and handle them appropriately.
+Connect the data line to an open-drain GPIO with an external pull-up resistor
+(typically 4.7 kΩ). The pin must implement both `InputPin` and `OutputPin` in
+that mode. For example, with `stm32f4xx-hal`, split the GPIO port and configure
+an available pin with `into_open_drain_output()`. Supply a board delay that
+implements `embedded_hal::delay::DelayNs`.
 
-The 1-wire bus requires a single digital pin that is configured as an
-open-drain output (it's either open, or connected to ground), and the bus
-should have a ~5K Ohm pull-up resistor connected. How you obtain this pin from your
-specific device is up the the embedded-hal implementation for that device, but it must
-implement both `InputPin` and `OutputPin` 
+```rust,no_run
+use embedded_hal::delay::DelayNs;
+use embedded_hal::digital::{InputPin, OutputPin};
+use one_wire_bus::{Address, OneWire, OneWireResult};
 
-```rust
-use embedded_hal::blocking::delay::DelayUs;
-use embedded_hal::digital::v2::{InputPin, OutputPin};
-use core::fmt::{Debug, Write};
-use one_wire_bus::OneWire;
-
-fn find_devices<P, E>(
-    delay: &mut impl DelayUs<u16>,
-    tx: &mut impl Write,
-    one_wire_pin: P,
-)
-    where
-        P: OutputPin<Error=E> + InputPin<Error=E>,
-        E: Debug
-{
-    let mut one_wire_bus = OneWire::new(one_wire_pin).unwrap();
-    for device_address in one_wire_bus.devices(false, delay) {
-        // The search could fail at any time, so check each result. The iterator automatically
-        // ends after an error.
-        let device_address = device_address.unwrap();
-
-        // The family code can be used to identify the type of device
-        // If supported, another crate can be used to interact with that device at the given address
-        writeln!(tx, "Found device at address {:?} with family code: {:#x?}",
-                 device_address, device_address.family_code()).unwrap();
+fn find_devices<P: InputPin + OutputPin>(
+    pin: P,
+    delay: &mut impl DelayNs,
+    mut report: impl FnMut(Address),
+) -> OneWireResult<(), P::Error> {
+    let mut bus = OneWire::new(pin)?;
+    // Pass true instead to search only for devices with an active alarm.
+    for address in bus.devices(false, delay) {
+        report(address?);
     }
+    Ok(())
 }
 ```
 
-Example Output
-```
-Found device at address E800000B1FCD1028 with family code: 0x28
-Found device at address 70000008AC851628 with family code: 0x28
-Found device at address 0B00000B20687E28 with family code: 0x28
-Found device at address 5700000B2015FF28 with family code: 0x28
-```
+Pass the configured pin and delay to `find_devices`. The callback receives
+each ROM address and can call `Address::family_code()` to identify the device
+type. The iterator stops after the first error.
+
+If searches return `UnexpectedResponse`, check that the GPIO can read the line
+while released and that the delay is calibrated to the configured CPU clock.
+The bus is bit-banged, so GPIO overhead and interrupts affect the sample time.
+
+## Upgrading from 0.1
+
+Replace HAL 0.2 delay implementations with HAL 1.0's `DelayNs` and use the GPIO
+traits from `embedded_hal::digital`. Sampling with `is_bus_high` or
+`is_bus_low` now requires a mutable bus handle, matching HAL 1.0's `InputPin`.
+
+The optional `std` feature adds `std::error::Error` support for
+`OneWireError`. It is disabled by default.

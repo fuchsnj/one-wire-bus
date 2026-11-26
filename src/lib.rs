@@ -1,7 +1,11 @@
 #![no_std]
+#![doc = include_str!("../README.md")]
 
-use embedded_hal::blocking::delay::DelayUs;
-use embedded_hal::digital::v2::{InputPin, OutputPin};
+#[cfg(feature = "std")]
+extern crate std;
+
+use embedded_hal::delay::DelayNs;
+use embedded_hal::digital::{InputPin, OutputPin};
 
 mod address;
 pub mod commands;
@@ -11,10 +15,10 @@ mod error;
 pub use address::Address;
 pub use error::{OneWireError, OneWireResult};
 
+/// The nominal duration of a read slot in microseconds.
 pub const READ_SLOT_DURATION_MICROS: u16 = 70;
 
-/// Implementation of the 1-Wire protocol.
-/// https://www.maximintegrated.com/en/design/technical-documents/app-notes/1/126.html
+/// The state needed to resume a ROM search after finding a device.
 #[derive(Debug)]
 pub struct SearchState {
     // The address of the last found device
@@ -28,15 +32,16 @@ pub struct SearchState {
     last_discrepancy_index: u8,
 }
 
+/// A 1-Wire bus accessed through an open-drain GPIO.
 pub struct OneWire<T> {
     pin: T,
 }
 
 impl<T, E> OneWire<T>
 where
-    T: InputPin<Error = E>,
-    T: OutputPin<Error = E>,
+    T: InputPin + OutputPin<Error = E>,
 {
+    /// Releases the bus and returns a bus handle for the configured pin.
     pub fn new(pin: T) -> OneWireResult<OneWire<T>, E> {
         let mut one_wire = OneWire { pin };
         // Pin should be high during idle.
@@ -44,35 +49,32 @@ where
         Ok(one_wire)
     }
 
+    /// Returns the GPIO owned by the bus.
     pub fn into_inner(self) -> T {
         self.pin
     }
 
     /// Disconnects the bus, letting another device (or the pull-up resistor) set the bus value
     pub fn release_bus(&mut self) -> OneWireResult<(), E> {
-        self.pin
-            .set_high()
-            .map_err(|err| OneWireError::PinError(err))
+        self.pin.set_high().map_err(OneWireError::PinError)
     }
 
     /// Drives the bus low
     pub fn set_bus_low(&mut self) -> OneWireResult<(), E> {
-        self.pin
-            .set_low()
-            .map_err(|err| OneWireError::PinError(err))
+        self.pin.set_low().map_err(OneWireError::PinError)
     }
 
-    pub fn is_bus_high(&self) -> OneWireResult<bool, E> {
-        self.pin
-            .is_high()
-            .map_err(|err| OneWireError::PinError(err))
+    /// Samples the bus and returns whether the line is high.
+    pub fn is_bus_high(&mut self) -> OneWireResult<bool, E> {
+        self.pin.is_high().map_err(OneWireError::PinError)
     }
 
-    pub fn is_bus_low(&self) -> OneWireResult<bool, E> {
-        self.pin.is_low().map_err(|err| OneWireError::PinError(err))
+    /// Samples the bus and returns whether the line is low.
+    pub fn is_bus_low(&mut self) -> OneWireResult<bool, E> {
+        self.pin.is_low().map_err(OneWireError::PinError)
     }
 
-    fn wait_for_high(&self, delay: &mut impl DelayUs<u16>) -> OneWireResult<(), E> {
+    fn wait_for_high(&mut self, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         // wait up to 250 µs for the bus to become high (from the pull-up resistor)
         for _ in 0..125 {
             if self.is_bus_high()? {
@@ -84,7 +86,7 @@ where
     }
 
     /// Sends a reset pulse, then returns true if a device is present
-    pub fn reset(&mut self, delay: &mut impl DelayUs<u16>) -> OneWireResult<bool, E> {
+    pub fn reset(&mut self, delay: &mut impl DelayNs) -> OneWireResult<bool, E> {
         self.wait_for_high(delay)?;
 
         self.set_bus_low()?;
@@ -99,7 +101,8 @@ where
         Ok(device_present)
     }
 
-    pub fn read_bit(&mut self, delay: &mut impl DelayUs<u16>) -> OneWireResult<bool, E> {
+    /// Reads one bit from the bus.
+    pub fn read_bit(&mut self, delay: &mut impl DelayNs) -> OneWireResult<bool, E> {
         self.set_bus_low()?;
         delay.delay_us(6); // Maxim recommended wait time
 
@@ -111,7 +114,8 @@ where
         Ok(bit_value)
     }
 
-    pub fn read_byte(&mut self, delay: &mut impl DelayUs<u16>) -> OneWireResult<u8, E> {
+    /// Reads a byte, least significant bit first.
+    pub fn read_byte(&mut self, delay: &mut impl DelayNs) -> OneWireResult<u8, E> {
         let mut output: u8 = 0;
         for _ in 0..8 {
             output >>= 1;
@@ -121,18 +125,20 @@ where
         }
         Ok(output)
     }
+    /// Fills the output buffer with bytes read from the bus.
     pub fn read_bytes(
         &mut self,
         output: &mut [u8],
-        delay: &mut impl DelayUs<u16>,
+        delay: &mut impl DelayNs,
     ) -> OneWireResult<(), E> {
-        for i in 0..output.len() {
-            output[i] = self.read_byte(delay)?;
+        for byte in output {
+            *byte = self.read_byte(delay)?;
         }
         Ok(())
     }
 
-    pub fn write_1_bit(&mut self, delay: &mut impl DelayUs<u16>) -> OneWireResult<(), E> {
+    /// Writes a logic-one bit to the bus.
+    pub fn write_1_bit(&mut self, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         self.set_bus_low()?;
         delay.delay_us(6); // Maxim recommended wait time
 
@@ -141,7 +147,8 @@ where
         Ok(())
     }
 
-    pub fn write_0_bit(&mut self, delay: &mut impl DelayUs<u16>) -> OneWireResult<(), E> {
+    /// Writes a logic-zero bit to the bus.
+    pub fn write_0_bit(&mut self, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         self.set_bus_low()?;
         delay.delay_us(60); // Maxim recommended wait time
 
@@ -150,11 +157,8 @@ where
         Ok(())
     }
 
-    pub fn write_bit(
-        &mut self,
-        value: bool,
-        delay: &mut impl DelayUs<u16>,
-    ) -> OneWireResult<(), E> {
+    /// Writes one bit to the bus.
+    pub fn write_bit(&mut self, value: bool, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         if value {
             self.write_1_bit(delay)
         } else {
@@ -162,11 +166,8 @@ where
         }
     }
 
-    pub fn write_byte(
-        &mut self,
-        mut value: u8,
-        delay: &mut impl DelayUs<u16>,
-    ) -> OneWireResult<(), E> {
+    /// Writes a byte, least significant bit first.
+    pub fn write_byte(&mut self, mut value: u8, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         for _ in 0..8 {
             self.write_bit(value & 0x01 == 0x01, delay)?;
             value >>= 1;
@@ -174,13 +175,10 @@ where
         Ok(())
     }
 
-    pub fn write_bytes(
-        &mut self,
-        bytes: &[u8],
-        delay: &mut impl DelayUs<u16>,
-    ) -> OneWireResult<(), E> {
-        for i in 0..bytes.len() {
-            self.write_byte(bytes[i], delay)?;
+    /// Writes bytes in slice order, least significant bit first within each byte.
+    pub fn write_bytes(&mut self, bytes: &[u8], delay: &mut impl DelayNs) -> OneWireResult<(), E> {
+        for &byte in bytes {
+            self.write_byte(byte, delay)?;
         }
         Ok(())
     }
@@ -190,7 +188,7 @@ where
     pub fn match_address(
         &mut self,
         address: &Address,
-        delay: &mut impl DelayUs<u16>,
+        delay: &mut impl DelayNs,
     ) -> OneWireResult<(), E> {
         self.write_byte(commands::MATCH_ROM, delay)?;
         self.write_bytes(&address.0.to_le_bytes(), delay)?;
@@ -199,7 +197,7 @@ where
 
     /// Address all devices on the bus simultaneously.
     /// This should only be called after a reset, and should be immediately followed by another command
-    pub fn skip_address(&mut self, delay: &mut impl DelayUs<u16>) -> OneWireResult<(), E> {
+    pub fn skip_address(&mut self, delay: &mut impl DelayNs) -> OneWireResult<(), E> {
         self.write_byte(commands::SKIP_ROM, delay)?;
         Ok(())
     }
@@ -210,7 +208,7 @@ where
         &mut self,
         command: u8,
         address: Option<&Address>,
-        delay: &mut impl DelayUs<u16>,
+        delay: &mut impl DelayNs,
     ) -> OneWireResult<(), E> {
         self.reset(delay)?;
         if let Some(address) = address {
@@ -222,18 +220,18 @@ where
         Ok(())
     }
 
-    /// Returns an iterator that iterates over all device addresses on the bus
+    /// Iterates over device addresses on the bus until the search is complete or fails.
     /// They can be filtered to only alarming devices if needed
     /// There is no requirement to immediately finish iterating all devices, but if devices are
     /// added / removed / change alarm state, the search may return an error or fail to find a device
-    /// Device addresses will always be returned in the same order (lowest to highest, Little Endian)
+    /// Searches traverse ROM bits from least to most significant, choosing zero first.
     pub fn devices<'a, 'b, D>(
         &'a mut self,
         only_alarming: bool,
         delay: &'b mut D,
     ) -> DeviceSearch<'a, 'b, T, D>
     where
-        D: DelayUs<u16>,
+        D: DelayNs,
     {
         DeviceSearch {
             onewire: self,
@@ -249,12 +247,12 @@ where
     /// Start the first search with a search_state of `None`, then use the returned state for subsequent searches
     /// There is no time limit for continuing a search, but if devices are
     /// added / removed / change alarm state, the search may return an error or fail to find a device
-    /// Device addresses will always be returned in the same order (lowest to highest, Little Endian)
+    /// Searches traverse ROM bits from least to most significant, choosing zero first.
     pub fn device_search(
         &mut self,
         search_state: Option<&SearchState>,
         only_alarming: bool,
-        delay: &mut impl DelayUs<u16>,
+        delay: &mut impl DelayNs,
     ) -> OneWireResult<Option<(Address, SearchState)>, E> {
         if let Some(search_state) = search_state {
             if search_state.discrepancies == 0 {
@@ -359,6 +357,7 @@ where
     }
 }
 
+/// An iterator over ROM addresses found by [OneWire::devices].
 pub struct DeviceSearch<'a, 'b, T, D> {
     onewire: &'a mut OneWire<T>,
     delay: &'b mut D,
@@ -369,9 +368,8 @@ pub struct DeviceSearch<'a, 'b, T, D> {
 
 impl<'a, 'b, T, E, D> Iterator for DeviceSearch<'a, 'b, T, D>
 where
-    T: InputPin<Error = E>,
-    T: OutputPin<Error = E>,
-    D: DelayUs<u16>,
+    T: InputPin + OutputPin<Error = E>,
+    D: DelayNs,
 {
     type Item = OneWireResult<Address, E>;
 

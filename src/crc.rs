@@ -1,3 +1,5 @@
+//! Dallas/Maxim 1-Wire CRC-8 helpers.
+
 use crate::error::{OneWireError, OneWireResult};
 
 /// Calculates the crc8 of the input data.
