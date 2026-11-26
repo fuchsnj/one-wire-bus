@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Rust ${{ matrix.toolchain }}
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: stable
+            experimental: false
+          - toolchain: beta
+            experimental: false
+          - toolchain: nightly
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install "${{ matrix.toolchain }}" --profile minimal
+      - name: Test
+        run: cargo +${{ matrix.toolchain }} test --all-features
+      - name: Check formatting, lints, and bare-metal build
+        if: matrix.toolchain == 'stable'
+        run: |
+          rustup component add --toolchain stable rustfmt clippy
+          rustup target add --toolchain stable thumbv6m-none-eabi
+          cargo +stable fmt --all -- --check
+          cargo +stable clippy --all-targets --all-features -- -D warnings
+          cargo +stable check --no-default-features --target thumbv6m-none-eabi

@@ -3,9 +3,13 @@ use core::fmt::{Error, Formatter};
 /// A 64-bit address of a device. These are globally unique, and used to single out a single device on
 /// a potentially crowded bus
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub struct Address(pub u64);
+pub struct Address(
+    /// The raw ROM value, with the family code in the least significant byte.
+    pub u64,
+);
 
 impl Address {
+    /// Returns the device family code from the ROM address.
     pub fn family_code(&self) -> u8 {
         self.0.to_le_bytes()[0]
     }
